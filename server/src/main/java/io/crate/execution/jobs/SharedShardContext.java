@@ -33,6 +33,9 @@ import org.elasticsearch.index.shard.IndexShard;
 import org.elasticsearch.index.shard.ShardId;
 import org.elasticsearch.indices.IndicesService;
 
+import io.crate.common.collections.RefCountedItem;
+
+
 @NotThreadSafe
 public class SharedShardContext {
 
@@ -43,6 +46,7 @@ public class SharedShardContext {
 
     private IndexService indexService;
     private IndexShard indexShard;
+    private RefCountedItem<Engine.Searcher> searcher;
 
     SharedShardContext(IndicesService indicesService,
                        ShardId shardId,
@@ -54,8 +58,14 @@ public class SharedShardContext {
         this.wrapSearcher = wrapSearcher;
     }
 
-    public Engine.Searcher acquireSearcher(String source) throws IndexNotFoundException {
-        return wrapSearcher.apply(indexShard().acquireSearcher(source));
+    public RefCountedItem<Engine.Searcher> acquireSearcher(String source) throws IndexNotFoundException {
+        if (searcher == null) {
+            var engineSearcher = wrapSearcher.apply(indexShard().acquireSearcher(source));
+            searcher = new RefCountedItem<>(engineSearcher, engineSearcher::close);
+        } else {
+            searcher.inc();
+        }
+        return searcher;
     }
 
     public IndexShard indexShard() {
