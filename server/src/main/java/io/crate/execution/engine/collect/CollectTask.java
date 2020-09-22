@@ -32,7 +32,6 @@ import com.carrotsearch.hppc.IntObjectHashMap;
 
 import org.apache.lucene.search.IndexSearcher;
 import org.elasticsearch.Version;
-import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.threadpool.ThreadPool;
 
 import io.crate.breaker.BlockBasedRamAccounting;

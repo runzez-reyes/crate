@@ -46,7 +46,6 @@ import org.elasticsearch.cluster.metadata.Metadata;
 import org.elasticsearch.index.Index;
 import org.elasticsearch.index.IndexNotFoundException;
 import org.elasticsearch.index.IndexService;
-import org.elasticsearch.index.engine.Engine;
 import org.elasticsearch.index.shard.ShardId;
 
 import io.crate.common.collections.BorrowedItem;

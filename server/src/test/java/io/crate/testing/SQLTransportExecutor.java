@@ -188,6 +188,12 @@ public class SQLTransportExecutor {
         } catch (ElasticsearchTimeoutException e) {
             LOGGER.error("Timeout on SQL statement: {} {}", stmt, e);
             throw e;
+        } catch (RuntimeException e) {
+            var cause = e.getCause();
+            if (e.getClass() == RuntimeException.class && cause != null) {
+                Exceptions.rethrowUnchecked(cause);
+            }
+            throw e;
         }
     }
 
