@@ -26,6 +26,7 @@ import java.util.function.UnaryOperator;
 
 import javax.annotation.concurrent.NotThreadSafe;
 
+import org.apache.lucene.search.IndexSearcher;
 import org.elasticsearch.index.IndexNotFoundException;
 import org.elasticsearch.index.IndexService;
 import org.elasticsearch.index.engine.Engine;
@@ -46,7 +47,7 @@ public class SharedShardContext {
 
     private IndexService indexService;
     private IndexShard indexShard;
-    private RefCountedItem<Engine.Searcher> searcher;
+    private RefCountedItem<IndexSearcher> searcher;
 
     SharedShardContext(IndicesService indicesService,
                        ShardId shardId,
@@ -58,7 +59,7 @@ public class SharedShardContext {
         this.wrapSearcher = wrapSearcher;
     }
 
-    public RefCountedItem<Engine.Searcher> acquireSearcher(String source) throws IndexNotFoundException {
+    public RefCountedItem<IndexSearcher> acquireSearcher(String source) throws IndexNotFoundException {
         if (searcher == null) {
             var engineSearcher = wrapSearcher.apply(indexShard().acquireSearcher(source));
             searcher = new RefCountedItem<>(engineSearcher, engineSearcher::close);
