@@ -62,17 +62,17 @@ public abstract class AbstractDisruptionTestCase extends SQLTransportIntegration
 
     static final TimeValue DISRUPTION_HEALING_OVERHEAD = TimeValue.timeValueSeconds(40); // we use 30s as timeout in many places.
 
-    @Override
-    protected Settings nodeSettings(int nodeOrdinal) {
-        return Settings.builder().put(super.nodeSettings(nodeOrdinal)).put(DEFAULT_SETTINGS).build();
-    }
+//    @Override
+//    protected Settings nodeSettings(int nodeOrdinal) {
+//        return Settings.builder().put(super.nodeSettings(nodeOrdinal)).put(DEFAULT_SETTINGS).build();
+//    }
 
-    @Override
-    public Settings indexSettings() {
-        return Settings.builder().put(super.indexSettings())
-            // sync global checkpoint quickly so we can verify seq_no_stats aligned between all copies after tests.
-            .put(IndexService.GLOBAL_CHECKPOINT_SYNC_INTERVAL_SETTING.getKey(), "1s").build();
-    }
+//    @Override
+//    public Settings indexSettings() {
+//        return Settings.builder().put(super.indexSettings())
+//            // sync global checkpoint quickly so we can verify seq_no_stats aligned between all copies after tests.
+//            .put(IndexService.GLOBAL_CHECKPOINT_SYNC_INTERVAL_SETTING.getKey(), "1s").build();
+//    }
 
     @Override
     protected int numberOfShards() {

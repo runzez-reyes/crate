@@ -20,6 +20,7 @@ package org.elasticsearch.discovery;
 
 import com.carrotsearch.randomizedtesting.RandomizedTest;
 import io.crate.common.unit.TimeValue;
+import io.crate.integrationtests.Setup;
 import org.apache.lucene.mockfile.FilterFileSystemProvider;
 import org.elasticsearch.action.admin.indices.stats.ShardStats;
 import org.elasticsearch.cluster.metadata.IndexMetadata;
@@ -53,6 +54,7 @@ import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 @ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.TEST, numDataNodes = 0)
 public class DiskDisruptionIT extends AbstractDisruptionTestCase {
 
+    private Setup setup = new Setup(sqlExecutor);
     private static DisruptTranslogFileSystemProvider disruptTranslogFileSystemProvider;
 
     @BeforeClass
@@ -101,7 +103,7 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
      * all un-fsynced data will be lost.
      */
     public void testGlobalCheckpointIsSafe() throws Exception {
-        startCluster(rarely() ? 5 : 3);
+//        startCluster(rarely() ? 5 : 3);
 
         final int numberOfShards = 1 + randomInt(2);
         assertAcked(prepareCreate("test")
@@ -139,10 +141,10 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
                                                                false, random())) {
             indexer.setRequestTimeout(TimeValue.ZERO);
             indexer.setIgnoreIndexingFailures(true);
-            indexer.setAssertNoFailuresOnStop(false);
+//            indexer.setAssertNoFailuresOnStop(false);
             indexer.start(-1);
 
-            waitForDocs(randomIntBetween(1, 100), indexer);
+//            waitForDocs(randomIntBetween(1, 100), indexer);
 
             logger.info("injecting failures");
             injectTranslogFailures();
@@ -177,4 +179,13 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
         }
     }
 
+    @TestLogging("org.elasticsearch:INFO")
+    public void testBackGroundIndexer() {
+        var indexer = new BackgroundIndexer("test", sqlExecutor, -1, RandomizedTest.scaledRandomIntBetween(2, 5),
+                                                               false, random());
+            indexer.setRequestTimeout(TimeValue.ZERO);
+            indexer.setIgnoreIndexingFailures(true);
+            indexer.start(-1);
+
+    }
 }
