@@ -106,7 +106,10 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
         var numberOfShards = 1 + randomInt(2);
         var numberOfReplicas =  randomInt(2);
 
-        sqlExecutor.execute("create table test (x text) clustered into " + numberOfShards() +" shards with (number_of_replicas = " + numberOfReplicas + ")", null);
+        sqlExecutor.execute("create table test (x string) clustered into " + numberOfShards() +
+                            " shards with (number_of_replicas = " + numberOfReplicas +
+                            ", \"write.wait_for_active_shards\" = 1, \"global_checkpoint_sync.interval\"='1s')",
+                            null);
 
         AtomicBoolean stopGlobalCheckpointFetcher = new AtomicBoolean();
 
