@@ -16,16 +16,13 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.elasticsearch.discovery;
+package io.crate.integrationtests.disruption.discovery;
 
-import com.carrotsearch.randomizedtesting.RandomizedTest;
 import io.crate.common.unit.TimeValue;
 import io.crate.integrationtests.Setup;
 import org.apache.lucene.mockfile.FilterFileSystemProvider;
 import org.elasticsearch.action.admin.indices.stats.ShardStats;
-import org.elasticsearch.cluster.metadata.IndexMetadata;
 import org.elasticsearch.common.io.PathUtilsForTesting;
-import org.elasticsearch.common.settings.Settings;
 import org.elasticsearch.index.seqno.SequenceNumbers;
 import org.elasticsearch.test.BackgroundIndexer;
 import org.elasticsearch.test.ESIntegTestCase;
@@ -45,13 +42,12 @@ import java.nio.file.attribute.FileAttribute;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import static org.elasticsearch.test.hamcrest.ElasticsearchAssertions.assertAcked;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 
-@TestLogging("_root:DEBUG,org.elasticsearch.cluster.service:TRACE")
-@ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.TEST, numDataNodes = 0)
+@ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.TEST, numDataNodes = 1)
 public class DiskDisruptionIT extends AbstractDisruptionTestCase {
 
     private Setup setup = new Setup(sqlExecutor);
@@ -94,7 +90,6 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
             }
             return super.newFileChannel(path, options, attrs);
         }
-
     }
 
     /**
@@ -102,17 +97,12 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
      * It simulates a full power outage by preventing translog checkpoint files to be written and restart the cluster. This means that
      * all un-fsynced data will be lost.
      */
+    @TestLogging("org.elasticsearch:INFO, org.elasticsearch.test:DEBUG")
     public void testGlobalCheckpointIsSafe() throws Exception {
-//        startCluster(rarely() ? 5 : 3);
+        var numberOfShards = 1 + randomInt(2);
+        var numberOfReplicas =  randomInt(2);
 
-        final int numberOfShards = 1 + randomInt(2);
-        assertAcked(prepareCreate("test")
-                        .setSettings(Settings.builder()
-                                         .put(indexSettings())
-                                         .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, numberOfShards)
-                                         .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, randomInt(2))
-                        ));
-        ensureGreen();
+        execute("create table test (x text) clustered into " + numberOfShards() +" shards with (number_of_replicas = " + numberOfReplicas + ")");
 
         AtomicBoolean stopGlobalCheckpointFetcher = new AtomicBoolean();
 
@@ -137,14 +127,14 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
 
         globalCheckpointSampler.start();
 
-        try (BackgroundIndexer indexer = new BackgroundIndexer("test", sqlExecutor, -1, RandomizedTest.scaledRandomIntBetween(2, 5),
+        try (BackgroundIndexer indexer = new BackgroundIndexer("test", sqlExecutor, -1, 1,
                                                                false, random())) {
             indexer.setRequestTimeout(TimeValue.ZERO);
             indexer.setIgnoreIndexingFailures(true);
-//            indexer.setAssertNoFailuresOnStop(false);
+            indexer.setFailureAssertion(e -> {});
             indexer.start(-1);
 
-//            waitForDocs(randomIntBetween(1, 100), indexer);
+            waitForDocs(randomIntBetween(1, 100), indexer, "test");
 
             logger.info("injecting failures");
             injectTranslogFailures();
@@ -168,7 +158,7 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
         globalCheckpointSampler.join();
 
         logger.info("waiting for green");
-        ensureGreen("test");
+        ensureGreen(TimeValue.timeValueMinutes(3));
 
         for (ShardStats shardStats : client().admin().indices().prepareStats("test").clear().get().getShards()) {
             final int shardId = shardStats.getShardRouting().id();
@@ -179,13 +169,50 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
         }
     }
 
-    @TestLogging("org.elasticsearch:INFO")
-    public void testBackGroundIndexer() {
-        var indexer = new BackgroundIndexer("test", sqlExecutor, -1, RandomizedTest.scaledRandomIntBetween(2, 5),
-                                                               false, random());
-            indexer.setRequestTimeout(TimeValue.ZERO);
-            indexer.setIgnoreIndexingFailures(true);
-            indexer.start(-1);
 
+    /**
+     * Waits until at least a give number of document is visible for searchers
+     *
+     * @param numDocs number of documents to wait for
+     * @param indexer a {@link org.elasticsearch.test.BackgroundIndexer}. It will be first checked for documents indexed.
+     *                This saves on unneeded searches.
+     */
+    public void waitForDocs(final long numDocs, final BackgroundIndexer indexer, String table) throws Exception {
+        // indexing threads can wait for up to ~1m before retrying when they first try to index into a shard which is not STARTED.
+        final long maxWaitTimeMs = Math.max(90 * 1000, 200 * numDocs);
+
+        assertBusy(
+            () -> {
+                long lastKnownCount = indexer.totalIndexedDocs();
+
+                if (lastKnownCount >= numDocs) {
+                    try {
+                        var response = execute("select count(*) from " + table);
+                        long count = (long) response.rows()[0][0];
+                        if (count == lastKnownCount) {
+                            // no progress - try to refresh for the next time
+                            client().admin().indices().prepareRefresh().get();
+                            //1sqlExecutor.execute("refresh table " + table, null);
+                        }
+                        lastKnownCount = count;
+                    } catch (Exception e) { // count now acts like search and barfs if all shards failed...
+                        logger.debug("failed to executed count", e);
+                        throw e;
+                    }
+                }
+
+                if (logger.isDebugEnabled()) {
+                    if (lastKnownCount < numDocs) {
+                        logger.debug("[{}] docs indexed. waiting for [{}]", lastKnownCount, numDocs);
+                    } else {
+                        logger.debug("[{}] docs visible for search (needed [{}])", lastKnownCount, numDocs);
+                    }
+                }
+
+                assertThat(lastKnownCount, greaterThanOrEqualTo(numDocs));
+            },
+            maxWaitTimeMs,
+            TimeUnit.MILLISECONDS
+        );
     }
 }
