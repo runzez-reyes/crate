@@ -19,6 +19,7 @@
 package io.crate.integrationtests.disruption.discovery;
 
 import io.crate.common.unit.TimeValue;
+import io.crate.integrationtests.SQLTransportIntegrationTest;
 import io.crate.integrationtests.Setup;
 import org.apache.lucene.mockfile.FilterFileSystemProvider;
 import org.elasticsearch.action.admin.indices.stats.ShardStats;
@@ -39,6 +40,7 @@ import java.nio.file.FileSystems;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.attribute.FileAttribute;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
@@ -47,7 +49,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 
-@ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.TEST, numDataNodes = 1)
+@ESIntegTestCase.ClusterScope(scope = ESIntegTestCase.Scope.TEST, numDataNodes = 0)
 public class DiskDisruptionIT extends AbstractDisruptionTestCase {
 
     private Setup setup = new Setup(sqlExecutor);
@@ -99,10 +101,12 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
      */
     @TestLogging("org.elasticsearch:INFO, org.elasticsearch.test:DEBUG")
     public void testGlobalCheckpointIsSafe() throws Exception {
+        final List<String> nodes = startCluster(3);
+
         var numberOfShards = 1 + randomInt(2);
         var numberOfReplicas =  randomInt(2);
 
-        execute("create table test (x text) clustered into " + numberOfShards() +" shards with (number_of_replicas = " + numberOfReplicas + ")");
+        sqlExecutor.execute("create table test (x text) clustered into " + numberOfShards() +" shards with (number_of_replicas = " + numberOfReplicas + ")", null);
 
         AtomicBoolean stopGlobalCheckpointFetcher = new AtomicBoolean();
 
@@ -158,7 +162,7 @@ public class DiskDisruptionIT extends AbstractDisruptionTestCase {
         globalCheckpointSampler.join();
 
         logger.info("waiting for green");
-        ensureGreen(TimeValue.timeValueMinutes(3));
+        ensureGreen(TimeValue.timeValueSeconds(30));
 
         for (ShardStats shardStats : client().admin().indices().prepareStats("test").clear().get().getShards()) {
             final int shardId = shardStats.getShardRouting().id();
